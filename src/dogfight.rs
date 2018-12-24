@@ -31,9 +31,9 @@ impl SimpleState for Dogfight {
         _: StateData<'_, GameData<'_, '_>>,
         event: StateEvent,
     ) -> amethyst::Trans<amethyst::GameData<'static, 'static>, amethyst::StateEvent> {
-        if let StateEvent::Window(event) = &event {
-            match event {
-                Event::WindowEvent { event, .. } => match event {
+        match event {
+            StateEvent::Window(Event::WindowEvent {
+                event:
                     WindowEvent::KeyboardInput {
                         input:
                             KeyboardInput {
@@ -41,14 +41,14 @@ impl SimpleState for Dogfight {
                                 ..
                             },
                         ..
-                    }
-                    | WindowEvent::CloseRequested => Trans::Quit,
-                    _ => Trans::None,
-                },
-                _ => Trans::None,
-            }
-        } else {
-            Trans::None
+                    },
+                ..
+            }) => Trans::Quit,
+            StateEvent::Window(Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            }) => Trans::Quit,
+            _ => Trans::None,
         }
     }
 }
