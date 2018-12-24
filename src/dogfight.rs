@@ -19,8 +19,6 @@ impl SimpleState for Dogfight {
         let StateData { world, .. } = data;
         let plane_sprite_sheet = load_plane_sprite_sheet(world);
 
-        world.register::<Plane>();
-
         // Setup our game.
         init_planes(world, plane_sprite_sheet.clone());
         init_camera(world);

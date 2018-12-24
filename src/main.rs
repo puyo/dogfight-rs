@@ -2,6 +2,7 @@ extern crate amethyst;
 
 use amethyst::{
     core::{frame_limiter::FrameRateLimitStrategy, transform::TransformBundle},
+    input::InputBundle,
     prelude::*,
     renderer::{DisplayConfig, DrawFlat2D, Pipeline, RenderBundle, Stage},
     utils::application_root_dir,
@@ -12,6 +13,7 @@ use std::time::Duration;
 mod dogfight;
 mod level;
 mod plane;
+mod systems;
 
 fn main() -> amethyst::Result<()> {
     amethyst::Logger::from_config(Default::default())
@@ -32,11 +34,18 @@ fn main() -> amethyst::Result<()> {
 
     use crate::dogfight::Dogfight;
 
+    let binding_path = format!("{}/resources/input_config.ron", application_root_dir());
+
+    let input_bundle =
+        InputBundle::<String, String>::new().with_bindings_from_file(binding_path)?;
+
     let assets_dir = app_root;
 
     let game_data = GameDataBuilder::default()
         .with_bundle(RenderBundle::new(pipe, Some(config)).with_sprite_sheet_processor())?
-        .with_bundle(TransformBundle::new())?;
+        .with_bundle(TransformBundle::new())?
+        .with_bundle(input_bundle)?
+        .with(systems::PlaneSystem, "plane_system", &["input_system"]);
 
     let mut game = Application::build(assets_dir, Dogfight)?
         .with_frame_limit(
