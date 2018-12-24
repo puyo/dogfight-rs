@@ -6,8 +6,9 @@ use amethyst::{
     ecs::prelude::World,
     prelude::*,
     renderer::{
-        Camera, PngFormat, Projection, SpriteRender, SpriteSheet, SpriteSheetFormat,
-        SpriteSheetHandle, Texture, TextureMetadata,
+        Camera, Event, KeyboardInput, PngFormat, Projection, SpriteRender, SpriteSheet,
+        SpriteSheetFormat, SpriteSheetHandle, Texture, TextureMetadata, VirtualKeyCode,
+        WindowEvent,
     },
 };
 
@@ -23,6 +24,32 @@ impl SimpleState for Dogfight {
         // Setup our game.
         initialise_planes(world, sprite_sheet.clone());
         initialise_camera(world);
+    }
+
+    fn handle_event(
+        &mut self,
+        _: StateData<'_, GameData<'_, '_>>,
+        event: StateEvent,
+    ) -> amethyst::Trans<amethyst::GameData<'static, 'static>, amethyst::StateEvent> {
+        if let StateEvent::Window(event) = &event {
+            match event {
+                Event::WindowEvent { event, .. } => match event {
+                    WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                virtual_keycode: Some(VirtualKeyCode::Escape),
+                                ..
+                            },
+                        ..
+                    }
+                    | WindowEvent::CloseRequested => Trans::Quit,
+                    _ => Trans::None,
+                },
+                _ => Trans::None,
+            }
+        } else {
+            Trans::None
+        }
     }
 }
 
