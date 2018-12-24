@@ -22,8 +22,8 @@ impl SimpleState for Dogfight {
         world.register::<Plane>();
 
         // Setup our game.
-        initialise_planes(world, plane_sprite_sheet.clone());
-        initialise_camera(world);
+        init_planes(world, plane_sprite_sheet.clone());
+        init_camera(world);
     }
 
     fn handle_event(
@@ -79,7 +79,7 @@ fn load_plane_sprite_sheet(world: &mut World) -> SpriteSheetHandle {
 }
 
 /// Initialise the camera.
-fn initialise_camera(world: &mut World) {
+fn init_camera(world: &mut World) {
     let mut transform = Transform::default();
     transform.set_z(1.0);
     world
@@ -95,58 +95,58 @@ fn initialise_camera(world: &mut World) {
 }
 
 /// Initialises one paddle on the left, and one paddle on the right.
-fn initialise_planes(world: &mut World, sprite_sheet: SpriteSheetHandle) {
+fn init_planes(world: &mut World, sprite_sheet: SpriteSheetHandle) {
     let x = crate::level::WIDTH / 2.0;
     let y = crate::level::HEIGHT / 2.0;
 
-    let mut left_transform = Transform::default();
-    let mut right_transform = Transform::default();
+    let p1 = Plane {
+        velocity: [10.0, 10.0],
+        radius: 10.0,
+        engine_power: 10.0,
+        engine_heading: 0.0,
+        heading: 0.0,
+        speed: 0.0,
+        start_position: [x - 10.0, y - 10.0],
+        flip: false,
+        energy: 100,
+        dead: false,
+        spin: false,
+        invincible: false,
+    };
 
-    left_transform.set_xyz(x - 10.0, y, 0.0);
-    right_transform.set_xyz(x + 10.0, y, 0.0);
+    let p2 = Plane {
+        velocity: [10.0, 10.0],
+        radius: 10.0,
+        engine_power: 10.0,
+        engine_heading: 0.0,
+        heading: 0.0,
+        speed: 0.0,
+        start_position: [x + 10.0, y + 10.0],
+        flip: false,
+        energy: 100,
+        dead: false,
+        spin: false,
+        invincible: false,
+    };
+
+    init_plane(p1, world, sprite_sheet.clone());
+    init_plane(p2, world, sprite_sheet.clone());
+}
+
+fn init_plane(plane: Plane, world: &mut World, sprite_sheet: SpriteSheetHandle) {
+    let mut t = Transform::default();
 
     let sprite_render = SpriteRender {
-        sprite_sheet: sprite_sheet.clone(),
+        sprite_sheet: sprite_sheet,
         sprite_number: 0,
     };
 
-    world
-        .create_entity()
-        .with(sprite_render.clone())
-        .with(Plane {
-            velocity: [10.0, 10.0],
-            radius: 10.0,
-            engine_power: 10.0,
-            engine_heading: 0.0,
-            heading: 0.0,
-            speed: 0.0,
-            start_position: [x - 10.0, y - 10.0],
-            flip: false,
-            energy: 100,
-            dead: false,
-            spin: false,
-            invincible: false,
-        })
-        .with(left_transform)
-        .build();
+    t.set_xyz(plane.start_position[0], plane.start_position[1], 0.0);
 
     world
         .create_entity()
-        .with(sprite_render.clone())
-        .with(Plane {
-            velocity: [10.0, 10.0],
-            radius: 10.0,
-            engine_power: 10.0,
-            engine_heading: 0.0,
-            heading: 0.0,
-            speed: 0.0,
-            start_position: [x + 10.0, y + 10.0],
-            flip: false,
-            energy: 100,
-            dead: false,
-            spin: false,
-            invincible: false,
-        })
-        .with(right_transform)
+        .with(sprite_render)
+        .with(plane)
+        .with(t)
         .build();
 }
