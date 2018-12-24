@@ -17,12 +17,12 @@ pub struct Dogfight;
 impl SimpleState for Dogfight {
     fn on_start(&mut self, data: StateData<'_, GameData<'_, '_>>) {
         let StateData { world, .. } = data;
-        let sprite_sheet = load_sprite_sheet(world);
+        let plane_sprite_sheet = load_plane_sprite_sheet(world);
 
         world.register::<Plane>();
 
         // Setup our game.
-        initialise_planes(world, sprite_sheet.clone());
+        initialise_planes(world, plane_sprite_sheet.clone());
         initialise_camera(world);
     }
 
@@ -53,16 +53,12 @@ impl SimpleState for Dogfight {
     }
 }
 
-fn load_sprite_sheet(world: &mut World) -> SpriteSheetHandle {
-    // Load the sprite sheet necessary to render the graphics.
-    // The texture is the pixel data
-    // `sprite_sheet` is the layout of the sprites on the image
-    // `texture` is a cloneable reference to the texture
-    let texture = {
+fn load_plane_sprite_sheet(world: &mut World) -> SpriteSheetHandle {
+    let plane_texture = {
         let loader = world.read_resource::<Loader>();
         let texture_storage = world.read_resource::<AssetStorage<Texture>>();
         loader.load(
-            "texture/spritesheet.png",
+            "texture/plane.png",
             PngFormat,
             TextureMetadata::srgb_scale(),
             (),
@@ -74,9 +70,9 @@ fn load_sprite_sheet(world: &mut World) -> SpriteSheetHandle {
     let sprite_sheet_store = world.read_resource::<AssetStorage<SpriteSheet>>();
 
     loader.load(
-        "texture/spritesheet.ron", // Here we load the associated ron file
+        "texture/plane.ron", // Here we load the associated ron file
         SpriteSheetFormat,
-        texture, // We pass it the texture we want it to use
+        plane_texture, // We pass it the texture we want it to use
         (),
         &sprite_sheet_store,
     )
