@@ -12,20 +12,20 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .insert_resource(ClearColor(Color::rgb(0.4, 0.3, 0.9)))
         .add_startup_system(setup.system())
-        .add_system(plane_movement_system.system())
+        .add_system(plane_input_system.system())
         .add_system(shot_collision_system.system())
-        .add_system(shot_movement_system.system())
+        .add_system(movement_system.system())
         .add_system(exit_system::exit_system.system())
         .run();
 }
 
-struct Plane {
+#[derive(Debug)]
+struct Mob {
     velocity: Vec3,
 }
 
-struct Shot {
-    velocity: Vec3,
-}
+struct Plane {}
+struct Shot {}
 
 #[allow(dead_code)]
 enum Collider {
@@ -49,7 +49,8 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
             sprite: Sprite::new(Vec2::new(120.0, 30.0)),
             ..Default::default()
         })
-        .insert(Plane {
+        .insert(Plane {})
+        .insert(Mob {
             velocity: Vec3::new(0.0, 0.0, 0.0),
         })
         .insert(Collider::Plane);
@@ -62,7 +63,8 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
             sprite: Sprite::new(Vec2::new(30.0, 30.0)),
             ..Default::default()
         })
-        .insert(Shot {
+        .insert(Shot {})
+        .insert(Mob {
             velocity: 200.0 * Vec3::new(2.0, 2.0, 0.0).normalize(),
         });
 
@@ -96,60 +98,29 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
     }
 }
 
-fn plane_movement_system(
-    time: Res<Time>,
-    keyboard_input: Res<Input<KeyCode>>,
-    mut query: Query<(&mut Plane, &mut Transform)>,
-    mut windows: ResMut<Windows>,
-) {
-    if let Ok((mut plane, mut transform)) = query.single_mut() {
-        let delta_seconds = f32::min(0.2, time.delta_seconds());
-
-        let mut direction = 0.0;
+fn plane_input_system(keyboard_input: Res<Input<KeyCode>>, mut query: Query<(&Plane, &mut Mob)>) {
+    for (_plane, mut mob) in query.iter_mut() {
         if keyboard_input.pressed(KeyCode::Left) {
-            plane.velocity.x -= 10.0;
+            mob.velocity.x -= 10.0;
         }
 
         if keyboard_input.pressed(KeyCode::Right) {
-            plane.velocity.x += 10.0;
-        }
-
-        let translation = &mut transform.translation;
-
-        // move the plane horizontally
-        *translation += plane.velocity * delta_seconds;
-
-        let window = windows.get_primary_mut().unwrap();
-        let w2 = window.width() / 2.0;
-        let h2 = window.height() / 2.0;
-
-        if translation.x < w2 {
-            translation.x += window.width();
-        }
-        if translation.x >= w2 {
-            translation.x -= window.width();
-        }
-        if translation.y < h2 {
-            translation.y += window.height();
-        }
-        if translation.y >= h2 {
-            translation.y -= window.height();
+            mob.velocity.x += 10.0;
         }
     }
 }
 
-fn shot_movement_system(
+fn movement_system(
     time: Res<Time>,
-    mut shot_query: Query<(&Shot, &mut Transform)>,
+    mut query: Query<(&Mob, &mut Transform)>,
     mut windows: ResMut<Windows>,
 ) {
-    if let Ok((shot, mut transform)) = shot_query.single_mut() {
-        // clamp the timestep to stop the shot from escaping when the game starts
+    for (mob, mut transform) in query.iter_mut() {
         let delta_seconds = f32::min(0.2, time.delta_seconds());
 
         let translation = &mut transform.translation;
 
-        *translation += shot.velocity * delta_seconds;
+        *translation += mob.velocity * delta_seconds;
 
         let window = windows.get_primary_mut().unwrap();
         let w2 = window.width() / 2.0;
@@ -172,12 +143,12 @@ fn shot_movement_system(
 
 fn shot_collision_system(
     mut commands: Commands,
-    mut shot_query: Query<(&mut Shot, &Transform, &Sprite)>,
+    mut shot_query: Query<(&mut Shot, &mut Mob, &Transform, &Sprite)>,
     collider_query: Query<(Entity, &Collider, &Transform, &Sprite)>,
 ) {
-    if let Ok((mut shot, shot_transform, sprite)) = shot_query.single_mut() {
+    if let Ok((_shot, mut mob, shot_transform, sprite)) = shot_query.single_mut() {
         let shot_size = sprite.size;
-        let velocity = &mut shot.velocity;
+        let velocity = &mut mob.velocity;
 
         // check collision with walls
         for (collider_entity, collider, transform, sprite) in collider_query.iter() {
