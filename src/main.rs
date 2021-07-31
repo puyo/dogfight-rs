@@ -2,6 +2,7 @@ use bevy::{
     input::keyboard::KeyCode,
     prelude::*,
     render::pass::ClearColor,
+    render::renderer::*,
     sprite::collide_aabb::{collide, Collision},
 };
 
@@ -34,24 +35,42 @@ enum Collider {
     Plane,
 }
 
-fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
-    // Add the game's entities to our world
+fn setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut texture_atlases: ResMut<Assets<TextureAtlas>>,
+) {
+    // textures
+    let texture_handle = asset_server.load("textures/plane.png");
+    let texture_atlas = TextureAtlas::from_grid_with_padding(
+        texture_handle,
+        Vec2::new(12.0, 11.0),
+        10,
+        1,
+        Vec2::new(1.0, 1.0),
+    );
+    let texture_atlas_handle = texture_atlases.add(texture_atlas);
 
     // cameras
     commands.spawn_bundle(OrthographicCameraBundle::new_2d());
     commands.spawn_bundle(UiCameraBundle::default());
 
-    // plane
+    // planes
     commands
-        .spawn_bundle(SpriteBundle {
-            material: materials.add(Color::rgb(0.5, 0.5, 1.0).into()),
-            transform: Transform::from_xyz(0.0, -215.0, 0.0),
-            sprite: Sprite::new(Vec2::new(120.0, 30.0)),
+        .spawn_bundle(SpriteSheetBundle {
+            texture_atlas: texture_atlas_handle,
+            sprite: TextureAtlasSprite::new(1),
+            transform: Transform {
+                translation: Vec3::new(0.0, -215.0, 0.0),
+                rotation: Quat::IDENTITY,
+                scale: Vec3::new(4.0, 4.0, 0.0),
+            },
             ..Default::default()
         })
         .insert(Plane {})
         .insert(Mob {
-            velocity: Vec3::new(0.0, 0.0, 0.0),
+            velocity: Vec3::new(140.0, 0.0, 0.0),
         })
         .insert(Collider::Plane);
 
@@ -65,7 +84,7 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
         })
         .insert(Shot {})
         .insert(Mob {
-            velocity: 200.0 * Vec3::new(2.0, 2.0, 0.0).normalize(),
+            velocity: Vec3::new(140.0, 140.0, 0.0),
         });
 
     // Add bricks
@@ -144,14 +163,76 @@ fn movement_system(
 fn shot_collision_system(
     mut commands: Commands,
     mut shot_query: Query<(&mut Shot, &mut Mob, &Transform, &Sprite)>,
-    collider_query: Query<(Entity, &Collider, &Transform, &Sprite)>,
+    texture_atlases: Res<Assets<TextureAtlas>>,
+    collider_sprite_query: Query<(Entity, &Collider, &Transform, &Sprite)>,
+    collider_tex_query: Query<(
+        Entity,
+        &Collider,
+        &Transform,
+        &TextureAtlasSprite,
+        &Handle<TextureAtlas>,
+    )>,
 ) {
-    if let Ok((_shot, mut mob, shot_transform, sprite)) = shot_query.single_mut() {
+    // loop through shots
+    for (_shot, mut mob, shot_transform, sprite) in shot_query.iter_mut() {
         let shot_size = sprite.size;
-        let velocity = &mut mob.velocity;
+        let shot_velocity = &mut mob.velocity;
 
-        // check collision with walls
-        for (collider_entity, collider, transform, sprite) in collider_query.iter() {
+        // check collision with all things that have a (Collider, Transform, TextureAtlasSprite)
+        for (entity, collider, transform, sprite, tex_handle) in collider_tex_query.iter() {
+            let tex_atlas = texture_atlases.get(tex_handle).unwrap();
+            let tex = tex_atlas.textures[0];
+
+            if let Some(handle) = RenderResource::texture(sprite) {
+                println!("{:?}", handle);
+            }
+
+            let collision = collide(
+                shot_transform.translation,
+                shot_size,
+                transform.translation,
+                tex.max,
+            );
+
+            if let Some(collision) = collision {
+                // scorable colliders should be despawned and increment the scoreboard on collision
+                if let Collider::Scorable = *collider {
+                    commands.entity(entity).despawn();
+                }
+
+                // reflect the shot when it collides
+                let mut reflect_x = false;
+                let mut reflect_y = false;
+
+                // only reflect if the shot's velocity is going in the opposite direction of the
+                // collision
+                match collision {
+                    Collision::Left => reflect_x = shot_velocity.x > 0.0,
+                    Collision::Right => reflect_x = shot_velocity.x < 0.0,
+                    Collision::Top => reflect_y = shot_velocity.y < 0.0,
+                    Collision::Bottom => reflect_y = shot_velocity.y > 0.0,
+                }
+
+                // reflect velocity on the x-axis if we hit something on the x-axis
+                if reflect_x {
+                    shot_velocity.x = -shot_velocity.x;
+                }
+
+                // reflect velocity on the y-axis if we hit something on the y-axis
+                if reflect_y {
+                    shot_velocity.y = -shot_velocity.y;
+                }
+
+                // break if this collide is on a solid, otherwise continue check whether a solid is
+                // also in collision
+                if let Collider::Solid = *collider {
+                    break;
+                }
+            }
+        }
+
+        // check collision with all things that have a (Collider, Transform, Sprite)
+        for (collider_entity, collider, transform, sprite) in collider_sprite_query.iter() {
             let collision = collide(
                 shot_transform.translation,
                 shot_size,
@@ -172,20 +253,20 @@ fn shot_collision_system(
                 // only reflect if the shot's velocity is going in the opposite direction of the
                 // collision
                 match collision {
-                    Collision::Left => reflect_x = velocity.x > 0.0,
-                    Collision::Right => reflect_x = velocity.x < 0.0,
-                    Collision::Top => reflect_y = velocity.y < 0.0,
-                    Collision::Bottom => reflect_y = velocity.y > 0.0,
+                    Collision::Left => reflect_x = shot_velocity.x > 0.0,
+                    Collision::Right => reflect_x = shot_velocity.x < 0.0,
+                    Collision::Top => reflect_y = shot_velocity.y < 0.0,
+                    Collision::Bottom => reflect_y = shot_velocity.y > 0.0,
                 }
 
                 // reflect velocity on the x-axis if we hit something on the x-axis
                 if reflect_x {
-                    velocity.x = -velocity.x;
+                    shot_velocity.x = -shot_velocity.x;
                 }
 
                 // reflect velocity on the y-axis if we hit something on the y-axis
                 if reflect_y {
-                    velocity.y = -velocity.y;
+                    shot_velocity.y = -shot_velocity.y;
                 }
 
                 // break if this collide is on a solid, otherwise continue check whether a solid is
