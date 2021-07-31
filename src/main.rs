@@ -1,29 +1,33 @@
 use bevy::{
+    input::keyboard::KeyCode,
     prelude::*,
     render::pass::ClearColor,
     sprite::collide_aabb::{collide, Collision},
 };
 
-/// An implementation of the classic game "Breakout"
+mod exit_system;
+
 fn main() {
     App::build()
         .add_plugins(DefaultPlugins)
-        .insert_resource(ClearColor(Color::rgb(0.9, 0.9, 0.9)))
+        .insert_resource(ClearColor(Color::rgb(0.4, 0.3, 0.9)))
         .add_startup_system(setup.system())
         .add_system(plane_movement_system.system())
         .add_system(shot_collision_system.system())
         .add_system(shot_movement_system.system())
+        .add_system(exit_system::exit_system.system())
         .run();
 }
 
 struct Plane {
-    speed: f32,
+    velocity: Vec3,
 }
 
 struct Shot {
     velocity: Vec3,
 }
 
+#[allow(dead_code)]
 enum Collider {
     Solid,
     Scorable,
@@ -45,62 +49,22 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
             sprite: Sprite::new(Vec2::new(120.0, 30.0)),
             ..Default::default()
         })
-        .insert(Plane { speed: 500.0 })
+        .insert(Plane {
+            velocity: Vec3::new(0.0, 0.0, 0.0),
+        })
         .insert(Collider::Plane);
 
     // shot
     commands
         .spawn_bundle(SpriteBundle {
             material: materials.add(Color::rgb(1.0, 0.5, 0.5).into()),
-            transform: Transform::from_xyz(0.0, -50.0, 1.0),
+            transform: Transform::from_xyz(0.0, 0.0, 1.0),
             sprite: Sprite::new(Vec2::new(30.0, 30.0)),
             ..Default::default()
         })
         .insert(Shot {
-            velocity: 400.0 * Vec3::new(0.5, -0.5, 0.0).normalize(),
+            velocity: 200.0 * Vec3::new(2.0, 2.0, 0.0).normalize(),
         });
-
-    // Add walls
-    let wall_material = materials.add(Color::rgb(0.8, 0.8, 0.8).into());
-    let wall_thickness = 10.0;
-    let bounds = Vec2::new(900.0, 600.0);
-
-    // left
-    commands
-        .spawn_bundle(SpriteBundle {
-            material: wall_material.clone(),
-            transform: Transform::from_xyz(-bounds.x / 2.0, 0.0, 0.0),
-            sprite: Sprite::new(Vec2::new(wall_thickness, bounds.y + wall_thickness)),
-            ..Default::default()
-        })
-        .insert(Collider::Solid);
-    // right
-    commands
-        .spawn_bundle(SpriteBundle {
-            material: wall_material.clone(),
-            transform: Transform::from_xyz(bounds.x / 2.0, 0.0, 0.0),
-            sprite: Sprite::new(Vec2::new(wall_thickness, bounds.y + wall_thickness)),
-            ..Default::default()
-        })
-        .insert(Collider::Solid);
-    // bottom
-    commands
-        .spawn_bundle(SpriteBundle {
-            material: wall_material.clone(),
-            transform: Transform::from_xyz(0.0, -bounds.y / 2.0, 0.0),
-            sprite: Sprite::new(Vec2::new(bounds.x + wall_thickness, wall_thickness)),
-            ..Default::default()
-        })
-        .insert(Collider::Solid);
-    // top
-    commands
-        .spawn_bundle(SpriteBundle {
-            material: wall_material,
-            transform: Transform::from_xyz(0.0, bounds.y / 2.0, 0.0),
-            sprite: Sprite::new(Vec2::new(bounds.x + wall_thickness, wall_thickness)),
-            ..Default::default()
-        })
-        .insert(Collider::Solid);
 
     // Add bricks
     let brick_rows = 4;
@@ -135,32 +99,74 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
 fn plane_movement_system(
     time: Res<Time>,
     keyboard_input: Res<Input<KeyCode>>,
-    mut query: Query<(&Plane, &mut Transform)>,
+    mut query: Query<(&mut Plane, &mut Transform)>,
+    mut windows: ResMut<Windows>,
 ) {
-    if let Ok((plane, mut transform)) = query.single_mut() {
+    if let Ok((mut plane, mut transform)) = query.single_mut() {
+        let delta_seconds = f32::min(0.2, time.delta_seconds());
+
         let mut direction = 0.0;
         if keyboard_input.pressed(KeyCode::Left) {
-            direction -= 1.0;
+            plane.velocity.x -= 10.0;
         }
 
         if keyboard_input.pressed(KeyCode::Right) {
-            direction += 1.0;
+            plane.velocity.x += 10.0;
         }
 
         let translation = &mut transform.translation;
+
         // move the plane horizontally
-        translation.x += time.delta_seconds() * direction * plane.speed;
-        // bound the plane within the walls
-        translation.x = translation.x.min(380.0).max(-380.0);
+        *translation += plane.velocity * delta_seconds;
+
+        let window = windows.get_primary_mut().unwrap();
+        let w2 = window.width() / 2.0;
+        let h2 = window.height() / 2.0;
+
+        if translation.x < w2 {
+            translation.x += window.width();
+        }
+        if translation.x >= w2 {
+            translation.x -= window.width();
+        }
+        if translation.y < h2 {
+            translation.y += window.height();
+        }
+        if translation.y >= h2 {
+            translation.y -= window.height();
+        }
     }
 }
 
-fn shot_movement_system(time: Res<Time>, mut shot_query: Query<(&Shot, &mut Transform)>) {
-    // clamp the timestep to stop the shot from escaping when the game starts
-    let delta_seconds = f32::min(0.2, time.delta_seconds());
-
+fn shot_movement_system(
+    time: Res<Time>,
+    mut shot_query: Query<(&Shot, &mut Transform)>,
+    mut windows: ResMut<Windows>,
+) {
     if let Ok((shot, mut transform)) = shot_query.single_mut() {
-        transform.translation += shot.velocity * delta_seconds;
+        // clamp the timestep to stop the shot from escaping when the game starts
+        let delta_seconds = f32::min(0.2, time.delta_seconds());
+
+        let translation = &mut transform.translation;
+
+        *translation += shot.velocity * delta_seconds;
+
+        let window = windows.get_primary_mut().unwrap();
+        let w2 = window.width() / 2.0;
+        let h2 = window.height() / 2.0;
+
+        if translation.x < w2 {
+            translation.x += window.width();
+        }
+        if translation.x >= w2 {
+            translation.x -= window.width();
+        }
+        if translation.y < h2 {
+            translation.y += window.height();
+        }
+        if translation.y >= h2 {
+            translation.y -= window.height();
+        }
     }
 }
 
