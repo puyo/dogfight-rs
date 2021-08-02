@@ -22,6 +22,13 @@ fn main() {
 
 #[derive(Debug)]
 struct Mob {
+    thrust_angle: f32,
+    thrust_power: f32,
+    thrust_power_max: f32,
+    thrust_power_min: f32,
+    thrust_power_speed: f32,
+    thrust_turn_speed: f32,
+    drag_coefficient: f32,
     velocity: Vec3,
 }
 
@@ -70,6 +77,13 @@ fn setup(
         })
         .insert(Plane {})
         .insert(Mob {
+            thrust_angle: 0.0,
+            thrust_power: 10.0,
+            thrust_power_max: 10.0,
+            thrust_power_min: 0.0,
+            thrust_power_speed: 0.2,
+            thrust_turn_speed: 0.1,
+            drag_coefficient: 0.1,
             velocity: Vec3::new(140.0, 0.0, 0.0),
         })
         .insert(Collider::Plane);
@@ -84,6 +98,13 @@ fn setup(
         })
         .insert(Shot {})
         .insert(Mob {
+            thrust_angle: 0.0,
+            thrust_power: 0.0,
+            thrust_power_speed: 0.0,
+            thrust_power_max: 0.0,
+            thrust_power_min: 0.0,
+            thrust_turn_speed: 0.0,
+            drag_coefficient: 0.0,
             velocity: Vec3::new(140.0, 140.0, 0.0),
         });
 
@@ -120,42 +141,74 @@ fn setup(
 fn plane_input_system(keyboard_input: Res<Input<KeyCode>>, mut query: Query<(&Plane, &mut Mob)>) {
     for (_plane, mut mob) in query.iter_mut() {
         if keyboard_input.pressed(KeyCode::Left) {
-            mob.velocity.x -= 10.0;
+            mob.thrust_angle += mob.thrust_turn_speed;
         }
-
         if keyboard_input.pressed(KeyCode::Right) {
-            mob.velocity.x += 10.0;
+            mob.thrust_angle -= mob.thrust_turn_speed;
+        }
+        if keyboard_input.pressed(KeyCode::Up) {
+            mob.thrust_power += mob.thrust_power_speed;
+            if mob.thrust_power > mob.thrust_power_max {
+                mob.thrust_power = mob.thrust_power_max;
+            }
+        }
+        if keyboard_input.pressed(KeyCode::Down) {
+            mob.thrust_power -= mob.thrust_power_speed;
+            if mob.thrust_power < mob.thrust_power_min {
+                mob.thrust_power = mob.thrust_power_min;
+            }
         }
     }
 }
 
 fn movement_system(
     time: Res<Time>,
-    mut query: Query<(&Mob, &mut Transform)>,
+    mut query: Query<(&mut Mob, &mut Transform)>,
     mut windows: ResMut<Windows>,
 ) {
-    for (mob, mut transform) in query.iter_mut() {
+    for (mut mob, mut transform) in query.iter_mut() {
         let delta_seconds = f32::min(0.2, time.delta_seconds());
 
-        let translation = &mut transform.translation;
+        // thrust alters velocity
+        mob.velocity.x += mob.thrust_power * mob.thrust_angle.cos();
+        mob.velocity.y += mob.thrust_power * mob.thrust_angle.sin();
 
-        *translation += mob.velocity * delta_seconds;
+        let mut speed: f32 = mob.velocity.length();
+
+        // wind resistance
+        speed *= 0.9; // 1.0 - mob.drag_coefficient;
+
+        // maximum velocity
+        if speed > 200.0 {
+            speed = 200.0;
+            mob.velocity = speed * mob.velocity.normalize();
+        }
+
+        // if mob.thrust_power_speed > 0.0 {
+        //     println!(
+        //         "power = {}, angle = {}, velocity = {:?}, speed = {}",
+        //         mob.thrust_power, mob.thrust_angle, mob.velocity, speed
+        //     );
+        // }
+
+        transform.rotation = Quat::from_rotation_z(mob.thrust_angle);
+        transform.translation += mob.velocity * delta_seconds;
 
         let window = windows.get_primary_mut().unwrap();
         let w2 = window.width() / 2.0;
         let h2 = window.height() / 2.0;
 
-        if translation.x < w2 {
-            translation.x += window.width();
+        if transform.translation.x < w2 {
+            transform.translation.x += window.width();
         }
-        if translation.x >= w2 {
-            translation.x -= window.width();
+        if transform.translation.x >= w2 {
+            transform.translation.x -= window.width();
         }
-        if translation.y < h2 {
-            translation.y += window.height();
+        if transform.translation.y < h2 {
+            transform.translation.y += window.height();
         }
-        if translation.y >= h2 {
-            translation.y -= window.height();
+        if transform.translation.y >= h2 {
+            transform.translation.y -= window.height();
         }
     }
 }
