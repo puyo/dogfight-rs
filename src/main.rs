@@ -5,6 +5,7 @@ use bevy::{
     render::renderer::*,
     sprite::collide_aabb::{collide, Collision},
 };
+use std::time::Duration;
 
 mod exit_system;
 
@@ -13,6 +14,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .insert_resource(ClearColor(Color::rgb(0.4, 0.3, 0.9)))
         .add_startup_system(setup.system())
+        .add_system(shot_death_system.system())
         .add_system(plane_input_system.system())
         .add_system(shot_collision_system.system())
         .add_system(movement_system.system())
@@ -28,7 +30,10 @@ struct Mob {
     thrust_power_min: f32,
     thrust_power_speed: f32,
     thrust_turn_speed: f32,
-    drag_coefficient: f32,
+    max_speed: f32,
+    lift_factor: f32,
+    gravity_factor: f32,
+    drag_factor: f32,
     velocity: Vec3,
 }
 
@@ -41,6 +46,8 @@ enum Collider {
     Scorable,
     Plane,
 }
+
+const GRAVITY: f32 = 2.0;
 
 fn setup(
     mut commands: Commands,
@@ -82,18 +89,22 @@ fn setup(
             thrust_power_max: 10.0,
             thrust_power_min: 0.0,
             thrust_power_speed: 0.2,
-            thrust_turn_speed: 0.1,
-            drag_coefficient: 0.1,
+            thrust_turn_speed: 0.05,
+            max_speed: 200.0,
+            lift_factor: 0.01,
+            drag_factor: 0.01,
+            gravity_factor: 1.0,
             velocity: Vec3::new(140.0, 0.0, 0.0),
         })
-        .insert(Collider::Plane);
+        .insert(Collider::Plane)
+        .insert(Timer::from_seconds(0.0, false));
 
     // shot
     commands
         .spawn_bundle(SpriteBundle {
             material: materials.add(Color::rgb(1.0, 0.5, 0.5).into()),
             transform: Transform::from_xyz(0.0, 0.0, 1.0),
-            sprite: Sprite::new(Vec2::new(30.0, 30.0)),
+            sprite: Sprite::new(Vec2::new(10.0, 10.0)),
             ..Default::default()
         })
         .insert(Shot {})
@@ -104,7 +115,10 @@ fn setup(
             thrust_power_max: 0.0,
             thrust_power_min: 0.0,
             thrust_turn_speed: 0.0,
-            drag_coefficient: 0.0,
+            max_speed: 300.0,
+            lift_factor: 0.0,
+            drag_factor: 0.0,
+            gravity_factor: 0.0,
             velocity: Vec3::new(140.0, 140.0, 0.0),
         });
 
@@ -138,8 +152,14 @@ fn setup(
     }
 }
 
-fn plane_input_system(keyboard_input: Res<Input<KeyCode>>, mut query: Query<(&Plane, &mut Mob)>) {
-    for (_plane, mut mob) in query.iter_mut() {
+fn plane_input_system(
+    time: Res<Time>,
+    keyboard_input: Res<Input<KeyCode>>,
+    mut query: Query<(&Plane, &mut Mob, &Transform, &mut Timer)>,
+    mut commands: Commands,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    for (_plane, mut mob, transform, mut timer) in query.iter_mut() {
         if keyboard_input.pressed(KeyCode::Left) {
             mob.thrust_angle += mob.thrust_turn_speed;
         }
@@ -158,6 +178,55 @@ fn plane_input_system(keyboard_input: Res<Input<KeyCode>>, mut query: Query<(&Pl
                 mob.thrust_power = mob.thrust_power_min;
             }
         }
+
+        timer.tick(time.delta());
+        if timer.finished() && keyboard_input.pressed(KeyCode::Space) {
+            timer.set_duration(Duration::from_secs_f32(0.5));
+            timer.reset();
+
+            // shot
+            commands
+                .spawn_bundle(SpriteBundle {
+                    material: materials.add(Color::rgb(1.0, 1.0, 0.0).into()),
+                    transform: Transform {
+                        translation: transform.translation
+                            + transform.rotation.mul_vec3(Vec3::new(25.0, 0.0, 0.0)),
+                        rotation: transform.rotation,
+                        scale: Vec3::new(1.0, 1.0, 0.0),
+                    },
+                    sprite: Sprite::new(Vec2::new(10.0, 10.0)),
+                    ..Default::default()
+                })
+                .insert(Shot {})
+                .insert(Mob {
+                    thrust_angle: mob.thrust_angle,
+                    thrust_power: 0.0,
+                    thrust_power_speed: 0.0,
+                    thrust_power_max: 0.0,
+                    thrust_power_min: 0.0,
+                    thrust_turn_speed: 0.0,
+                    max_speed: 400.0,
+                    lift_factor: 0.0,
+                    drag_factor: 0.0,
+                    gravity_factor: 0.0,
+                    velocity: mob.velocity
+                        + transform.rotation.mul_vec3(Vec3::new(100.0, 0.0, 0.0)),
+                })
+                .insert(Timer::from_seconds(2.0, false));
+        }
+    }
+}
+
+fn shot_death_system(
+    time: Res<Time>,
+    mut query: Query<(Entity, &Shot, &mut Timer)>,
+    mut commands: Commands,
+) {
+    for (entity, _shot, mut timer) in query.iter_mut() {
+        timer.tick(time.delta());
+        if timer.finished() {
+            commands.entity(entity).despawn();
+        }
     }
 }
 
@@ -173,22 +242,26 @@ fn movement_system(
         mob.velocity.x += mob.thrust_power * mob.thrust_angle.cos();
         mob.velocity.y += mob.thrust_power * mob.thrust_angle.sin();
 
-        let mut speed: f32 = mob.velocity.length();
+        let speed: f32 = mob.velocity.length();
+
+        let vel_norm: Vec3 = mob.velocity.normalize();
 
         // wind resistance
-        speed *= 0.9; // 1.0 - mob.drag_coefficient;
+        let mut new_speed: f32 = speed * (1.0 - mob.drag_factor);
 
-        // maximum velocity
-        if speed > 200.0 {
-            speed = 200.0;
-            mob.velocity = speed * mob.velocity.normalize();
+        // maximum speed
+        if new_speed > mob.max_speed {
+            new_speed = mob.max_speed;
         }
+        mob.velocity = new_speed * vel_norm;
+
+        // dot product with a vector going up
+        let up: Vec3 = Vec3::new(1.0, 0.0, 0.0);
+        let upness: f32 = up.dot(mob.velocity).abs();
+        mob.velocity.y += upness * mob.lift_factor - (GRAVITY * mob.gravity_factor);
 
         // if mob.thrust_power_speed > 0.0 {
-        //     println!(
-        //         "power = {}, angle = {}, velocity = {:?}, speed = {}",
-        //         mob.thrust_power, mob.thrust_angle, mob.velocity, speed
-        //     );
+        //     println!("upness = {}", upness);
         // }
 
         transform.rotation = Quat::from_rotation_z(mob.thrust_angle);
