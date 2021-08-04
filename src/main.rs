@@ -5,6 +5,7 @@ use bevy::{
     render::renderer::*,
     sprite::collide_aabb::{collide, Collision},
 };
+use std::f32::consts::PI;
 use std::time::Duration;
 
 mod exit_system;
@@ -14,10 +15,11 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .insert_resource(ClearColor(Color::rgb(0.4, 0.3, 0.9)))
         .add_startup_system(setup.system())
-        .add_system(shot_death_system.system())
+        .add_system(shot_expiry_system.system())
         .add_system(plane_input_system.system())
         .add_system(shot_collision_system.system())
         .add_system(movement_system.system())
+        .add_system(plane_flip_system.system())
         .add_system(exit_system::exit_system.system())
         .run();
 }
@@ -37,7 +39,16 @@ struct Mob {
     velocity: Vec3,
 }
 
-struct Plane {}
+struct Plane {
+    steer_left_key: KeyCode,
+    steer_right_key: KeyCode,
+    throttle_up_key: KeyCode,
+    throttle_down_key: KeyCode,
+    fire_gun_key: KeyCode,
+    cannot_shoot_timer: Timer,
+    cannot_flip_timer: Timer,
+    flip_animation_timer: Timer,
+}
 struct Shot {}
 
 #[allow(dead_code)]
@@ -56,15 +67,26 @@ fn setup(
     mut texture_atlases: ResMut<Assets<TextureAtlas>>,
 ) {
     // textures
-    let texture_handle = asset_server.load("textures/plane.png");
-    let texture_atlas = TextureAtlas::from_grid_with_padding(
-        texture_handle,
+    let texture_handle1 = asset_server.load("textures/plane.png");
+    let texture_handle2 = asset_server.load("textures/plane-green.png");
+
+    let texture_atlas1 = TextureAtlas::from_grid_with_padding(
+        texture_handle1,
         Vec2::new(12.0, 11.0),
         10,
         1,
         Vec2::new(1.0, 1.0),
     );
-    let texture_atlas_handle = texture_atlases.add(texture_atlas);
+
+    let texture_atlas2 = TextureAtlas::from_grid_with_padding(
+        texture_handle2,
+        Vec2::new(12.0, 11.0),
+        10,
+        1,
+        Vec2::new(1.0, 1.0),
+    );
+    let texture_atlas_handle1 = texture_atlases.add(texture_atlas1);
+    let texture_atlas_handle2 = texture_atlases.add(texture_atlas2);
 
     // cameras
     commands.spawn_bundle(OrthographicCameraBundle::new_2d());
@@ -73,16 +95,25 @@ fn setup(
     // planes
     commands
         .spawn_bundle(SpriteSheetBundle {
-            texture_atlas: texture_atlas_handle,
+            texture_atlas: texture_atlas_handle1,
             sprite: TextureAtlasSprite::new(1),
             transform: Transform {
-                translation: Vec3::new(0.0, -215.0, 0.0),
+                translation: Vec3::new(-100.0, -215.0, 0.0),
                 rotation: Quat::IDENTITY,
                 scale: Vec3::new(4.0, 4.0, 0.0),
             },
             ..Default::default()
         })
-        .insert(Plane {})
+        .insert(Plane {
+            steer_left_key: KeyCode::Left,
+            steer_right_key: KeyCode::Right,
+            throttle_up_key: KeyCode::Up,
+            throttle_down_key: KeyCode::Down,
+            fire_gun_key: KeyCode::Space,
+            cannot_shoot_timer: Timer::from_seconds(0.0, false),
+            cannot_flip_timer: Timer::from_seconds(0.0, false),
+            flip_animation_timer: Timer::from_seconds(0.05, true),
+        })
         .insert(Mob {
             thrust_angle: 0.0,
             thrust_power: 10.0,
@@ -96,31 +127,43 @@ fn setup(
             gravity_factor: 1.0,
             velocity: Vec3::new(140.0, 0.0, 0.0),
         })
-        .insert(Collider::Plane)
-        .insert(Timer::from_seconds(0.0, false));
+        .insert(Collider::Plane);
 
-    // shot
     commands
-        .spawn_bundle(SpriteBundle {
-            material: materials.add(Color::rgb(1.0, 0.5, 0.5).into()),
-            transform: Transform::from_xyz(0.0, 0.0, 1.0),
-            sprite: Sprite::new(Vec2::new(10.0, 10.0)),
+        .spawn_bundle(SpriteSheetBundle {
+            texture_atlas: texture_atlas_handle2,
+            sprite: TextureAtlasSprite::new(1),
+            transform: Transform {
+                translation: Vec3::new(100.0, 0.0, 0.0),
+                rotation: Quat::from_rotation_z(3.14),
+                scale: Vec3::new(4.0, 4.0, 0.0),
+            },
             ..Default::default()
         })
-        .insert(Shot {})
+        .insert(Plane {
+            steer_left_key: KeyCode::A,
+            steer_right_key: KeyCode::D,
+            throttle_up_key: KeyCode::W,
+            throttle_down_key: KeyCode::S,
+            fire_gun_key: KeyCode::E,
+            cannot_shoot_timer: Timer::from_seconds(0.0, false),
+            cannot_flip_timer: Timer::from_seconds(0.0, false),
+            flip_animation_timer: Timer::from_seconds(0.05, true),
+        })
         .insert(Mob {
             thrust_angle: 0.0,
-            thrust_power: 0.0,
-            thrust_power_speed: 0.0,
-            thrust_power_max: 0.0,
+            thrust_power: 10.0,
+            thrust_power_max: 10.0,
             thrust_power_min: 0.0,
-            thrust_turn_speed: 0.0,
-            max_speed: 300.0,
-            lift_factor: 0.0,
-            drag_factor: 0.0,
-            gravity_factor: 0.0,
-            velocity: Vec3::new(140.0, 140.0, 0.0),
-        });
+            thrust_power_speed: 0.2,
+            thrust_turn_speed: 0.05,
+            max_speed: 200.0,
+            lift_factor: 0.01,
+            drag_factor: 0.01,
+            gravity_factor: 1.0,
+            velocity: Vec3::new(140.0, 0.0, 0.0),
+        })
+        .insert(Collider::Plane);
 
     // Add bricks
     let brick_rows = 4;
@@ -155,34 +198,46 @@ fn setup(
 fn plane_input_system(
     time: Res<Time>,
     keyboard_input: Res<Input<KeyCode>>,
-    mut query: Query<(&Plane, &mut Mob, &Transform, &mut Timer)>,
+    mut query: Query<(&mut Plane, &mut Mob, &Transform)>,
     mut commands: Commands,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    for (_plane, mut mob, transform, mut timer) in query.iter_mut() {
-        if keyboard_input.pressed(KeyCode::Left) {
+    for (mut plane, mut mob, transform) in query.iter_mut() {
+        plane.cannot_flip_timer.tick(time.delta());
+        plane.cannot_shoot_timer.tick(time.delta());
+
+        if keyboard_input.pressed(plane.steer_left_key) {
             mob.thrust_angle += mob.thrust_turn_speed;
+            plane
+                .cannot_flip_timer
+                .set_duration(Duration::from_secs_f32(0.5));
+            plane.cannot_flip_timer.reset();
         }
-        if keyboard_input.pressed(KeyCode::Right) {
+        if keyboard_input.pressed(plane.steer_right_key) {
             mob.thrust_angle -= mob.thrust_turn_speed;
+            plane
+                .cannot_flip_timer
+                .set_duration(Duration::from_secs_f32(0.5));
+            plane.cannot_flip_timer.reset();
         }
-        if keyboard_input.pressed(KeyCode::Up) {
+        if keyboard_input.pressed(plane.throttle_up_key) {
             mob.thrust_power += mob.thrust_power_speed;
             if mob.thrust_power > mob.thrust_power_max {
                 mob.thrust_power = mob.thrust_power_max;
             }
         }
-        if keyboard_input.pressed(KeyCode::Down) {
+        if keyboard_input.pressed(plane.throttle_down_key) {
             mob.thrust_power -= mob.thrust_power_speed;
             if mob.thrust_power < mob.thrust_power_min {
                 mob.thrust_power = mob.thrust_power_min;
             }
         }
 
-        timer.tick(time.delta());
-        if timer.finished() && keyboard_input.pressed(KeyCode::Space) {
-            timer.set_duration(Duration::from_secs_f32(0.5));
-            timer.reset();
+        if plane.cannot_shoot_timer.finished() && keyboard_input.pressed(plane.fire_gun_key) {
+            plane
+                .cannot_shoot_timer
+                .set_duration(Duration::from_secs_f32(0.5));
+            plane.cannot_shoot_timer.reset();
 
             // shot
             commands
@@ -217,15 +272,47 @@ fn plane_input_system(
     }
 }
 
-fn shot_death_system(
+fn shot_expiry_system(
     time: Res<Time>,
     mut query: Query<(Entity, &Shot, &mut Timer)>,
     mut commands: Commands,
 ) {
     for (entity, _shot, mut timer) in query.iter_mut() {
         timer.tick(time.delta());
+
         if timer.finished() {
             commands.entity(entity).despawn();
+        }
+    }
+}
+
+const PI_HALF: f32 = PI * 0.5;
+const PI_ONE_AND_A_HALF: f32 = PI * 1.5;
+const PLANE_SPRITE_INDEX_RIGHT_WAY_UP: u32 = 1;
+const PLANE_SPRITE_INDEX_UPSIDE_DOWN: u32 = 9;
+
+fn plane_flip_system(
+    time: Res<Time>,
+    mut query: Query<(&mut Plane, &Transform, &mut TextureAtlasSprite)>,
+) {
+    for (mut plane, transform, mut sprite) in query.iter_mut() {
+        plane.cannot_flip_timer.tick(time.delta());
+
+        if plane.cannot_flip_timer.finished() {
+            plane.flip_animation_timer.tick(time.delta());
+
+            if plane.flip_animation_timer.finished() {
+                let (_axis, angle) = transform.rotation.to_axis_angle();
+                let sprite_index: u32;
+
+                if PI_HALF < angle && angle < PI_ONE_AND_A_HALF {
+                    sprite_index = u32::min(sprite.index + 1, PLANE_SPRITE_INDEX_UPSIDE_DOWN);
+                } else {
+                    sprite_index = u32::max(sprite.index - 1, PLANE_SPRITE_INDEX_RIGHT_WAY_UP);
+                }
+
+                sprite.index = sprite_index;
+            }
         }
     }
 }
