@@ -48,6 +48,7 @@ struct Plane {
     cannot_shoot_timer: Timer,
     cannot_flip_timer: Timer,
     flip_animation_timer: Timer,
+    flipping: bool,
 }
 struct Shot {}
 
@@ -112,7 +113,8 @@ fn setup(
             fire_gun_key: KeyCode::Space,
             cannot_shoot_timer: Timer::from_seconds(0.0, false),
             cannot_flip_timer: Timer::from_seconds(0.0, false),
-            flip_animation_timer: Timer::from_seconds(0.05, true),
+            flip_animation_timer: Timer::from_seconds(0.1, true),
+            flipping: false,
         })
         .insert(Mob {
             thrust_angle: 0.0,
@@ -149,6 +151,7 @@ fn setup(
             cannot_shoot_timer: Timer::from_seconds(0.0, false),
             cannot_flip_timer: Timer::from_seconds(0.0, false),
             flip_animation_timer: Timer::from_seconds(0.05, true),
+            flipping: false,
         })
         .insert(Mob {
             thrust_angle: 0.0,
@@ -202,23 +205,18 @@ fn plane_input_system(
     mut commands: Commands,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
+    let mut turned: bool = false;
+
     for (mut plane, mut mob, transform) in query.iter_mut() {
-        plane.cannot_flip_timer.tick(time.delta());
         plane.cannot_shoot_timer.tick(time.delta());
 
         if keyboard_input.pressed(plane.steer_left_key) {
             mob.thrust_angle += mob.thrust_turn_speed;
-            plane
-                .cannot_flip_timer
-                .set_duration(Duration::from_secs_f32(0.5));
-            plane.cannot_flip_timer.reset();
+            turned = true;
         }
         if keyboard_input.pressed(plane.steer_right_key) {
             mob.thrust_angle -= mob.thrust_turn_speed;
-            plane
-                .cannot_flip_timer
-                .set_duration(Duration::from_secs_f32(0.5));
-            plane.cannot_flip_timer.reset();
+            turned = true;
         }
         if keyboard_input.pressed(plane.throttle_up_key) {
             mob.thrust_power += mob.thrust_power_speed;
@@ -231,6 +229,13 @@ fn plane_input_system(
             if mob.thrust_power < mob.thrust_power_min {
                 mob.thrust_power = mob.thrust_power_min;
             }
+        }
+
+        if turned && !plane.flipping {
+            plane
+                .cannot_flip_timer
+                .set_duration(Duration::from_secs_f32(0.1));
+            plane.cannot_flip_timer.reset();
         }
 
         if plane.cannot_shoot_timer.finished() && keyboard_input.pressed(plane.fire_gun_key) {
@@ -297,22 +302,21 @@ fn plane_flip_system(
 ) {
     for (mut plane, transform, mut sprite) in query.iter_mut() {
         plane.cannot_flip_timer.tick(time.delta());
+        plane.flip_animation_timer.tick(time.delta());
 
-        if plane.cannot_flip_timer.finished() {
-            plane.flip_animation_timer.tick(time.delta());
+        if plane.cannot_flip_timer.finished() && plane.flip_animation_timer.finished() {
+            let (_axis, angle) = transform.rotation.to_axis_angle();
+            let sprite_index: u32;
 
-            if plane.flip_animation_timer.finished() {
-                let (_axis, angle) = transform.rotation.to_axis_angle();
-                let sprite_index: u32;
-
-                if PI_HALF < angle && angle < PI_ONE_AND_A_HALF {
-                    sprite_index = u32::min(sprite.index + 1, PLANE_SPRITE_INDEX_UPSIDE_DOWN);
-                } else {
-                    sprite_index = u32::max(sprite.index - 1, PLANE_SPRITE_INDEX_RIGHT_WAY_UP);
-                }
-
-                sprite.index = sprite_index;
+            if PI_HALF < angle && angle < PI_ONE_AND_A_HALF {
+                sprite_index = u32::min(sprite.index + 1, PLANE_SPRITE_INDEX_UPSIDE_DOWN);
+            } else {
+                sprite_index = u32::max(sprite.index - 1, PLANE_SPRITE_INDEX_RIGHT_WAY_UP);
             }
+
+            sprite.index = sprite_index;
+            plane.flipping = PLANE_SPRITE_INDEX_RIGHT_WAY_UP < sprite.index
+                && sprite.index < PLANE_SPRITE_INDEX_UPSIDE_DOWN;
         }
     }
 }
