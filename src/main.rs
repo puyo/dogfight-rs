@@ -1,30 +1,15 @@
 use bevy::{
     input::keyboard::KeyCode,
     prelude::*,
-    render::pass::ClearColor,
-    render::renderer::*,
     sprite::collide_aabb::{collide, Collision},
 };
+use std::cmp;
 use std::f32::consts::PI;
 use std::time::Duration;
 
 mod exit_system;
 
-fn main() {
-    App::build()
-        .add_plugins(DefaultPlugins)
-        .insert_resource(ClearColor(Color::rgb(0.4, 0.3, 0.9)))
-        .add_startup_system(setup.system())
-        .add_system(shot_expiry_system.system())
-        .add_system(plane_input_system.system())
-        .add_system(shot_collision_system.system())
-        .add_system(movement_system.system())
-        .add_system(plane_flip_system.system())
-        .add_system(exit_system::exit_system.system())
-        .run();
-}
-
-#[derive(Debug)]
+#[derive(Debug, Component)]
 struct Mob {
     thrust_angle: f32,
     thrust_power: f32,
@@ -39,6 +24,7 @@ struct Mob {
     velocity: Vec3,
 }
 
+#[derive(Component)]
 struct Plane {
     steer_left_key: KeyCode,
     steer_right_key: KeyCode,
@@ -50,42 +36,44 @@ struct Plane {
     flip_animation_timer: Timer,
     flipping: bool,
 }
+
+#[derive(Component)]
 struct Shot {}
 
-#[allow(dead_code)]
-enum Collider {
-    Solid,
-    Scorable,
-    Plane,
+#[derive(Component)]
+struct Collider;
+
+#[derive(Component)]
+struct Expiry {
+    timer: Timer,
 }
 
 const GRAVITY: f32 = 2.0;
 
-fn setup(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    mut texture_atlases: ResMut<Assets<TextureAtlas>>,
-) {
+fn main() {
+    App::new()
+        .add_plugins(DefaultPlugins)
+        .insert_resource(ClearColor(Color::rgb(0.4, 0.3, 0.9)))
+        .add_startup_system(setup)
+        .add_system(shot_expiry_system)
+        .add_system(plane_input_system)
+        .add_system(shot_collision_system)
+        .add_system(movement_system)
+        .add_system(plane_flip_system)
+        .add_system(exit_system::exit_system)
+        .run();
+}
+
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut texture_atlases: ResMut<Assets<TextureAtlas>>) {
     // textures
     let texture_handle1 = asset_server.load("textures/plane.png");
     let texture_handle2 = asset_server.load("textures/plane-green.png");
 
-    let texture_atlas1 = TextureAtlas::from_grid_with_padding(
-        texture_handle1,
-        Vec2::new(12.0, 11.0),
-        10,
-        1,
-        Vec2::new(1.0, 1.0),
-    );
+    let texture_atlas1 =
+        TextureAtlas::from_grid_with_padding(texture_handle1, Vec2::new(12.0, 11.0), 10, 1, Vec2::new(1.0, 1.0));
 
-    let texture_atlas2 = TextureAtlas::from_grid_with_padding(
-        texture_handle2,
-        Vec2::new(12.0, 11.0),
-        10,
-        1,
-        Vec2::new(1.0, 1.0),
-    );
+    let texture_atlas2 =
+        TextureAtlas::from_grid_with_padding(texture_handle2, Vec2::new(12.0, 11.0), 10, 1, Vec2::new(1.0, 1.0));
     let texture_atlas_handle1 = texture_atlases.add(texture_atlas1);
     let texture_atlas_handle2 = texture_atlases.add(texture_atlas2);
 
@@ -95,16 +83,7 @@ fn setup(
 
     // planes
     commands
-        .spawn_bundle(SpriteSheetBundle {
-            texture_atlas: texture_atlas_handle1,
-            sprite: TextureAtlasSprite::new(1),
-            transform: Transform {
-                translation: Vec3::new(-100.0, -215.0, 0.0),
-                rotation: Quat::IDENTITY,
-                scale: Vec3::new(4.0, 4.0, 0.0),
-            },
-            ..Default::default()
-        })
+        .spawn()
         .insert(Plane {
             steer_left_key: KeyCode::Left,
             steer_right_key: KeyCode::Right,
@@ -129,19 +108,20 @@ fn setup(
             gravity_factor: 1.0,
             velocity: Vec3::new(140.0, 0.0, 0.0),
         })
-        .insert(Collider::Plane);
-
-    commands
-        .spawn_bundle(SpriteSheetBundle {
-            texture_atlas: texture_atlas_handle2,
+        .insert(Collider)
+        .insert_bundle(SpriteSheetBundle {
+            texture_atlas: texture_atlas_handle1,
             sprite: TextureAtlasSprite::new(1),
             transform: Transform {
-                translation: Vec3::new(100.0, 0.0, 0.0),
-                rotation: Quat::from_rotation_z(3.14),
+                translation: Vec3::new(-100.0, -215.0, 0.0),
+                rotation: Quat::IDENTITY,
                 scale: Vec3::new(4.0, 4.0, 0.0),
             },
-            ..Default::default()
-        })
+            ..default()
+        });
+
+    commands
+        .spawn()
         .insert(Plane {
             steer_left_key: KeyCode::A,
             steer_right_key: KeyCode::D,
@@ -166,36 +146,17 @@ fn setup(
             gravity_factor: 1.0,
             velocity: Vec3::new(140.0, 0.0, 0.0),
         })
-        .insert(Collider::Plane);
-
-    // Add bricks
-    let brick_rows = 4;
-    let brick_columns = 5;
-    let brick_spacing = 20.0;
-    let brick_size = Vec2::new(150.0, 30.0);
-    let bricks_width = brick_columns as f32 * (brick_size.x + brick_spacing) - brick_spacing;
-    // center the bricks and move them up a bit
-    let bricks_offset = Vec3::new(-(bricks_width - brick_size.x) / 2.0, 100.0, 0.0);
-    let brick_material = materials.add(Color::rgb(0.5, 0.5, 1.0).into());
-    for row in 0..brick_rows {
-        let y_position = row as f32 * (brick_size.y + brick_spacing);
-        for column in 0..brick_columns {
-            let brick_position = Vec3::new(
-                column as f32 * (brick_size.x + brick_spacing),
-                y_position,
-                0.0,
-            ) + bricks_offset;
-            // brick
-            commands
-                .spawn_bundle(SpriteBundle {
-                    material: brick_material.clone(),
-                    sprite: Sprite::new(brick_size),
-                    transform: Transform::from_translation(brick_position),
-                    ..Default::default()
-                })
-                .insert(Collider::Scorable);
-        }
-    }
+        .insert(Collider)
+        .insert_bundle(SpriteSheetBundle {
+            texture_atlas: texture_atlas_handle2,
+            sprite: TextureAtlasSprite::new(1),
+            transform: Transform {
+                translation: Vec3::new(100.0, 0.0, 0.0),
+                rotation: Quat::from_rotation_z(3.14),
+                scale: Vec3::new(4.0, 4.0, 0.0),
+            },
+            ..default()
+        });
 }
 
 fn plane_input_system(
@@ -203,7 +164,6 @@ fn plane_input_system(
     keyboard_input: Res<Input<KeyCode>>,
     mut query: Query<(&mut Plane, &mut Mob, &Transform)>,
     mut commands: Commands,
-    mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let mut turned: bool = false;
 
@@ -232,31 +192,17 @@ fn plane_input_system(
         }
 
         if turned && !plane.flipping {
-            plane
-                .cannot_flip_timer
-                .set_duration(Duration::from_secs_f32(0.1));
+            plane.cannot_flip_timer.set_duration(Duration::from_secs_f32(0.1));
             plane.cannot_flip_timer.reset();
         }
 
         if plane.cannot_shoot_timer.finished() && keyboard_input.pressed(plane.fire_gun_key) {
-            plane
-                .cannot_shoot_timer
-                .set_duration(Duration::from_secs_f32(0.5));
+            plane.cannot_shoot_timer.set_duration(Duration::from_secs_f32(0.5));
             plane.cannot_shoot_timer.reset();
 
             // shot
             commands
-                .spawn_bundle(SpriteBundle {
-                    material: materials.add(Color::rgb(1.0, 1.0, 0.0).into()),
-                    transform: Transform {
-                        translation: transform.translation
-                            + transform.rotation.mul_vec3(Vec3::new(25.0, 0.0, 0.0)),
-                        rotation: transform.rotation,
-                        scale: Vec3::new(1.0, 1.0, 0.0),
-                    },
-                    sprite: Sprite::new(Vec2::new(10.0, 10.0)),
-                    ..Default::default()
-                })
+                .spawn()
                 .insert(Shot {})
                 .insert(Mob {
                     thrust_angle: mob.thrust_angle,
@@ -269,23 +215,34 @@ fn plane_input_system(
                     lift_factor: 0.0,
                     drag_factor: 0.0,
                     gravity_factor: 0.0,
-                    velocity: mob.velocity
-                        + transform.rotation.mul_vec3(Vec3::new(100.0, 0.0, 0.0)),
+                    velocity: mob.velocity + transform.rotation.mul_vec3(Vec3::new(100.0, 0.0, 0.0)),
                 })
-                .insert(Timer::from_seconds(2.0, false));
+                .insert(Expiry {
+                    timer: Timer::from_seconds(2.0, false),
+                })
+                .insert_bundle(SpriteBundle {
+                    transform: Transform {
+                        translation: transform.translation + transform.rotation.mul_vec3(Vec3::new(25.0, 0.0, 0.0)),
+                        rotation: transform.rotation,
+                        scale: Vec3::new(1.0, 1.0, 0.0),
+                        ..default()
+                    },
+                    sprite: Sprite {
+                        custom_size: Some(Vec2::new(10.0, 10.0)),
+                        color: Color::rgb(1.0, 1.0, 0.0),
+                        ..default()
+                    },
+                    ..default()
+                });
         }
     }
 }
 
-fn shot_expiry_system(
-    time: Res<Time>,
-    mut query: Query<(Entity, &Shot, &mut Timer)>,
-    mut commands: Commands,
-) {
-    for (entity, _shot, mut timer) in query.iter_mut() {
-        timer.tick(time.delta());
+fn shot_expiry_system(time: Res<Time>, mut query: Query<(Entity, &mut Expiry)>, mut commands: Commands) {
+    for (entity, mut expiry) in query.iter_mut() {
+        expiry.timer.tick(time.delta());
 
-        if timer.finished() {
+        if expiry.timer.finished() {
             commands.entity(entity).despawn();
         }
     }
@@ -293,39 +250,32 @@ fn shot_expiry_system(
 
 const PI_HALF: f32 = PI * 0.5;
 const PI_ONE_AND_A_HALF: f32 = PI * 1.5;
-const PLANE_SPRITE_INDEX_RIGHT_WAY_UP: u32 = 1;
-const PLANE_SPRITE_INDEX_UPSIDE_DOWN: u32 = 9;
+const PLANE_SPRITE_INDEX_RIGHT_WAY_UP: usize = 1;
+const PLANE_SPRITE_INDEX_UPSIDE_DOWN: usize = 9;
 
-fn plane_flip_system(
-    time: Res<Time>,
-    mut query: Query<(&mut Plane, &Transform, &mut TextureAtlasSprite)>,
-) {
+fn plane_flip_system(time: Res<Time>, mut query: Query<(&mut Plane, &Transform, &mut TextureAtlasSprite)>) {
     for (mut plane, transform, mut sprite) in query.iter_mut() {
         plane.cannot_flip_timer.tick(time.delta());
         plane.flip_animation_timer.tick(time.delta());
 
         if plane.cannot_flip_timer.finished() && plane.flip_animation_timer.finished() {
             let (_axis, angle) = transform.rotation.to_axis_angle();
-            let sprite_index: u32;
+            let sprite_index: usize;
 
             if PI_HALF < angle && angle < PI_ONE_AND_A_HALF {
-                sprite_index = u32::min(sprite.index + 1, PLANE_SPRITE_INDEX_UPSIDE_DOWN);
+                sprite_index = cmp::min(sprite.index + 1, PLANE_SPRITE_INDEX_UPSIDE_DOWN);
             } else {
-                sprite_index = u32::max(sprite.index - 1, PLANE_SPRITE_INDEX_RIGHT_WAY_UP);
+                sprite_index = cmp::max(sprite.index - 1, PLANE_SPRITE_INDEX_RIGHT_WAY_UP);
             }
 
             sprite.index = sprite_index;
-            plane.flipping = PLANE_SPRITE_INDEX_RIGHT_WAY_UP < sprite.index
-                && sprite.index < PLANE_SPRITE_INDEX_UPSIDE_DOWN;
+            plane.flipping =
+                PLANE_SPRITE_INDEX_RIGHT_WAY_UP < sprite.index && sprite.index < PLANE_SPRITE_INDEX_UPSIDE_DOWN;
         }
     }
 }
 
-fn movement_system(
-    time: Res<Time>,
-    mut query: Query<(&mut Mob, &mut Transform)>,
-    mut windows: ResMut<Windows>,
-) {
+fn movement_system(time: Res<Time>, mut query: Query<(&mut Mob, &mut Transform)>, mut windows: ResMut<Windows>) {
     for (mut mob, mut transform) in query.iter_mut() {
         let delta_seconds = f32::min(0.2, time.delta_seconds());
 
@@ -378,118 +328,83 @@ fn movement_system(
 }
 
 fn shot_collision_system(
-    mut commands: Commands,
-    mut shot_query: Query<(&mut Shot, &mut Mob, &Transform, &Sprite)>,
+    mut shot_query: Query<(&mut Mob, &Transform, &Sprite), With<Shot>>,
     texture_atlases: Res<Assets<TextureAtlas>>,
-    collider_sprite_query: Query<(Entity, &Collider, &Transform, &Sprite)>,
-    collider_tex_query: Query<(
-        Entity,
-        &Collider,
-        &Transform,
-        &TextureAtlasSprite,
-        &Handle<TextureAtlas>,
-    )>,
+    collider_sprite_query: Query<&Transform, With<Collider>>,
+    collider_tex_query: Query<(&Transform, &Handle<TextureAtlas>), With<Collider>>,
 ) {
     // loop through shots
-    for (_shot, mut mob, shot_transform, sprite) in shot_query.iter_mut() {
-        let shot_size = sprite.size;
-        let shot_velocity = &mut mob.velocity;
+    for (mut mob, shot_transform, sprite) in shot_query.iter_mut() {
+        if let Some(shot_size) = sprite.custom_size {
+            let shot_velocity = &mut mob.velocity;
 
-        // check collision with all things that have a (Collider, Transform, TextureAtlasSprite)
-        for (entity, collider, transform, sprite, tex_handle) in collider_tex_query.iter() {
-            let tex_atlas = texture_atlases.get(tex_handle).unwrap();
-            let tex = tex_atlas.textures[0];
+            // check collision with all things that have a (Collider, Transform, TextureAtlasSprite)
+            for (transform, tex_handle) in collider_tex_query.iter() {
+                let tex_atlas = texture_atlases.get(tex_handle).unwrap();
+                let tex = tex_atlas.textures[0];
 
-            if let Some(handle) = RenderResource::texture(sprite) {
-                println!("{:?}", handle);
-            }
+                let collision = collide(shot_transform.translation, shot_size, transform.translation, tex.max);
 
-            let collision = collide(
-                shot_transform.translation,
-                shot_size,
-                transform.translation,
-                tex.max,
-            );
+                if let Some(collision) = collision {
+                    // reflect the shot when it collides
+                    let mut reflect_x = false;
+                    let mut reflect_y = false;
 
-            if let Some(collision) = collision {
-                // scorable colliders should be despawned and increment the scoreboard on collision
-                if let Collider::Scorable = *collider {
-                    commands.entity(entity).despawn();
-                }
+                    // only reflect if the shot's velocity is going in the opposite direction of the
+                    // collision
+                    match collision {
+                        Collision::Left => reflect_x = shot_velocity.x > 0.0,
+                        Collision::Right => reflect_x = shot_velocity.x < 0.0,
+                        Collision::Top => reflect_y = shot_velocity.y < 0.0,
+                        Collision::Bottom => reflect_y = shot_velocity.y > 0.0,
+                        Collision::Inside => { /* nothing */ }
+                    }
 
-                // reflect the shot when it collides
-                let mut reflect_x = false;
-                let mut reflect_y = false;
+                    // reflect velocity on the x-axis if we hit something on the x-axis
+                    if reflect_x {
+                        shot_velocity.x = -shot_velocity.x;
+                    }
 
-                // only reflect if the shot's velocity is going in the opposite direction of the
-                // collision
-                match collision {
-                    Collision::Left => reflect_x = shot_velocity.x > 0.0,
-                    Collision::Right => reflect_x = shot_velocity.x < 0.0,
-                    Collision::Top => reflect_y = shot_velocity.y < 0.0,
-                    Collision::Bottom => reflect_y = shot_velocity.y > 0.0,
-                }
-
-                // reflect velocity on the x-axis if we hit something on the x-axis
-                if reflect_x {
-                    shot_velocity.x = -shot_velocity.x;
-                }
-
-                // reflect velocity on the y-axis if we hit something on the y-axis
-                if reflect_y {
-                    shot_velocity.y = -shot_velocity.y;
-                }
-
-                // break if this collide is on a solid, otherwise continue check whether a solid is
-                // also in collision
-                if let Collider::Solid = *collider {
-                    break;
+                    // reflect velocity on the y-axis if we hit something on the y-axis
+                    if reflect_y {
+                        shot_velocity.y = -shot_velocity.y;
+                    }
                 }
             }
-        }
 
-        // check collision with all things that have a (Collider, Transform, Sprite)
-        for (collider_entity, collider, transform, sprite) in collider_sprite_query.iter() {
-            let collision = collide(
-                shot_transform.translation,
-                shot_size,
-                transform.translation,
-                sprite.size,
-            );
+            // check collision with all things that have a (Collider, Transform, Sprite)
+            for transform in collider_sprite_query.iter() {
+                let collision = collide(
+                    shot_transform.translation,
+                    shot_size,
+                    transform.translation,
+                    transform.scale.truncate(),
+                );
 
-            if let Some(collision) = collision {
-                // scorable colliders should be despawned and increment the scoreboard on collision
-                if let Collider::Scorable = *collider {
-                    commands.entity(collider_entity).despawn();
-                }
+                if let Some(collision) = collision {
+                    // reflect the shot when it collides
+                    let mut reflect_x = false;
+                    let mut reflect_y = false;
 
-                // reflect the shot when it collides
-                let mut reflect_x = false;
-                let mut reflect_y = false;
+                    // only reflect if the shot's velocity is going in the opposite direction of the
+                    // collision
+                    match collision {
+                        Collision::Left => reflect_x = shot_velocity.x > 0.0,
+                        Collision::Right => reflect_x = shot_velocity.x < 0.0,
+                        Collision::Top => reflect_y = shot_velocity.y < 0.0,
+                        Collision::Bottom => reflect_y = shot_velocity.y > 0.0,
+                        Collision::Inside => { /* nothing */ }
+                    }
 
-                // only reflect if the shot's velocity is going in the opposite direction of the
-                // collision
-                match collision {
-                    Collision::Left => reflect_x = shot_velocity.x > 0.0,
-                    Collision::Right => reflect_x = shot_velocity.x < 0.0,
-                    Collision::Top => reflect_y = shot_velocity.y < 0.0,
-                    Collision::Bottom => reflect_y = shot_velocity.y > 0.0,
-                }
+                    // reflect velocity on the x-axis if we hit something on the x-axis
+                    if reflect_x {
+                        shot_velocity.x = -shot_velocity.x;
+                    }
 
-                // reflect velocity on the x-axis if we hit something on the x-axis
-                if reflect_x {
-                    shot_velocity.x = -shot_velocity.x;
-                }
-
-                // reflect velocity on the y-axis if we hit something on the y-axis
-                if reflect_y {
-                    shot_velocity.y = -shot_velocity.y;
-                }
-
-                // break if this collide is on a solid, otherwise continue check whether a solid is
-                // also in collision
-                if let Collider::Solid = *collider {
-                    break;
+                    // reflect velocity on the y-axis if we hit something on the y-axis
+                    if reflect_y {
+                        shot_velocity.y = -shot_velocity.y;
+                    }
                 }
             }
         }
