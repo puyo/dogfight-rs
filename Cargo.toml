@@ -2,8 +2,8 @@
 name = "dogfight-rs"
 version = "0.1.0"
 authors = []
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-bevy = { version = "0.5.0", features = ["dynamic"] }
+bevy = { version = "0.7", features = ["dynamic"] }
 
