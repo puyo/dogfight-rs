@@ -4,5 +4,16 @@ version = "0.1.0"
 authors = []
 edition = "2021"
 
-[dependencies]
-bevy = { version = "0.7", features = ["dynamic"] }
+[dependencies.bevy]
+version = "0.7"
+
+# Note that the dynamic feature isn't supported for WASM targets.
+# But it does speed up compilation times on other platforms.
+# Note: this should be removed when actually releasing a game.
+[target.'cfg(not(target_family = "wasm"))'.dependencies.bevy]
+version = "0.7"
+features = ["dynamic"]
+
+[target.'cfg(target_family = "wasm")'.profile.release]
+# Optimise for size (only really useful if targeting WASM)
+opt-level = "z"
