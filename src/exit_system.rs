@@ -2,7 +2,7 @@ use bevy::{
     app::AppExit,
     input::{
         keyboard::{KeyCode, KeyboardInput},
-        ElementState,
+        ButtonState,
     },
     prelude::*,
 };
@@ -15,12 +15,10 @@ pub fn exit_system(
 ) {
     for event in keyboard_input_events.iter() {
         if let Some(key_code) = event.key_code {
-            if event.state == ElementState::Pressed
+            if event.state == ButtonState::Pressed
                 && (key_code == KeyCode::Escape
-                    || key_code == KeyCode::Q
-                        && (input.pressed(KeyCode::LWin) || input.pressed(KeyCode::RWin))
-                    || key_code == KeyCode::F4
-                        && (input.pressed(KeyCode::LAlt) || input.pressed(KeyCode::RAlt)))
+                    || key_code == KeyCode::Q && (input.pressed(KeyCode::LWin) || input.pressed(KeyCode::RWin))
+                    || key_code == KeyCode::F4 && (input.pressed(KeyCode::LAlt) || input.pressed(KeyCode::RAlt)))
             {
                 app_exit_events.send(AppExit);
             }

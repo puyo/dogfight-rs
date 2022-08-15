@@ -69,17 +69,28 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut texture_atl
     let texture_handle1 = asset_server.load("textures/plane.png");
     let texture_handle2 = asset_server.load("textures/plane-green.png");
 
-    let texture_atlas1 =
-        TextureAtlas::from_grid_with_padding(texture_handle1, Vec2::new(12.0, 11.0), 10, 1, Vec2::new(1.0, 1.0));
+    let texture_atlas1 = TextureAtlas::from_grid_with_padding(
+        texture_handle1,
+        Vec2::new(12.0, 11.0),
+        10,
+        1,
+        Vec2::new(1.0, 1.0),
+        Vec2::ZERO,
+    );
 
-    let texture_atlas2 =
-        TextureAtlas::from_grid_with_padding(texture_handle2, Vec2::new(12.0, 11.0), 10, 1, Vec2::new(1.0, 1.0));
+    let texture_atlas2 = TextureAtlas::from_grid_with_padding(
+        texture_handle2,
+        Vec2::new(12.0, 11.0),
+        10,
+        1,
+        Vec2::new(1.0, 1.0),
+        Vec2::ZERO,
+    );
     let texture_atlas_handle1 = texture_atlases.add(texture_atlas1);
     let texture_atlas_handle2 = texture_atlases.add(texture_atlas2);
 
     // cameras
-    commands.spawn_bundle(OrthographicCameraBundle::new_2d());
-    commands.spawn_bundle(UiCameraBundle::default());
+    commands.spawn_bundle(Camera2dBundle::default());
 
     // planes
     commands
