@@ -65,29 +65,22 @@ fn main() {
 }
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut texture_atlases: ResMut<Assets<TextureAtlas>>) {
-    // textures
-    let texture_handle1 = asset_server.load("textures/plane.png");
-    let texture_handle2 = asset_server.load("textures/plane-green.png");
-
-    let texture_atlas1 = TextureAtlas::from_grid_with_padding(
-        texture_handle1,
+    let red_plane_textures = texture_atlases.add(TextureAtlas::from_grid_with_padding(
+        asset_server.load("textures/plane.png"),
         Vec2::new(12.0, 11.0),
         10,
         1,
         Vec2::new(1.0, 1.0),
         Vec2::ZERO,
-    );
-
-    let texture_atlas2 = TextureAtlas::from_grid_with_padding(
-        texture_handle2,
+    ));
+    let green_plane_textures = texture_atlases.add(TextureAtlas::from_grid_with_padding(
+        asset_server.load("textures/plane-green.png"),
         Vec2::new(12.0, 11.0),
         10,
         1,
         Vec2::new(1.0, 1.0),
         Vec2::ZERO,
-    );
-    let texture_atlas_handle1 = texture_atlases.add(texture_atlas1);
-    let texture_atlas_handle2 = texture_atlases.add(texture_atlas2);
+    ));
 
     // cameras
     commands.spawn_bundle(Camera2dBundle::default());
@@ -121,7 +114,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut texture_atl
         })
         .insert(Collider)
         .insert_bundle(SpriteSheetBundle {
-            texture_atlas: texture_atlas_handle1,
+            texture_atlas: red_plane_textures,
             sprite: TextureAtlasSprite::new(1),
             transform: Transform {
                 translation: Vec3::new(-100.0, -215.0, 0.0),
@@ -159,7 +152,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut texture_atl
         })
         .insert(Collider)
         .insert_bundle(SpriteSheetBundle {
-            texture_atlas: texture_atlas_handle2,
+            texture_atlas: green_plane_textures,
             sprite: TextureAtlasSprite::new(1),
             transform: Transform {
                 translation: Vec3::new(100.0, 0.0, 0.0),
