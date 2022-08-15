@@ -1,6 +1,7 @@
 use bevy::{
     input::keyboard::KeyCode,
     prelude::*,
+    render::texture::ImageSettings,
     sprite::collide_aabb::{collide, Collision},
 };
 use std::cmp;
@@ -52,6 +53,7 @@ const GRAVITY: f32 = 2.0;
 
 fn main() {
     App::new()
+        .insert_resource(ImageSettings::default_nearest()) // prevents blurry sprites
         .add_plugins(DefaultPlugins)
         .insert_resource(ClearColor(Color::rgb(0.4, 0.3, 0.9)))
         .add_startup_system(setup)
@@ -118,8 +120,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut texture_atl
             sprite: TextureAtlasSprite::new(1),
             transform: Transform {
                 translation: Vec3::new(-100.0, -215.0, 0.0),
-                rotation: Quat::IDENTITY,
-                scale: Vec3::new(4.0, 4.0, 0.0),
+                scale: Vec3::splat(4.0),
+                ..default()
             },
             ..default()
         });
@@ -157,7 +159,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut texture_atl
             transform: Transform {
                 translation: Vec3::new(100.0, 0.0, 0.0),
                 rotation: Quat::from_rotation_z(3.14),
-                scale: Vec3::new(4.0, 4.0, 0.0),
+                scale: Vec3::splat(4.0),
+                ..default()
             },
             ..default()
         });
